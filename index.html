@@ -1,264 +1,297 @@
 <!DOCTYPE html>
-<title>hulet.org</title>
-<meta charset="UTF-8">
-<meta name='viewport' content='width=device-width, initial-scale=1'>
-<meta name='description' content='hulet.org'>
-<!-- <script src='https://cdn.jsdelivr.net/npm/vue/dist/vue.js'></script> -->
-<script src='vue.min.js'></script>
-<script src='three.min.js'></script>
-<style>
-/* Fullscreen CSS for html and body */
-    html, body {
-        margin: 0;
-        padding: 0;
-        height: 100%;
-        width: 100%;
-        overflow: hidden; /* Prevent scrollbars */
-    }
+<html>
+<head>
+    <title>hulet.org</title>
+    <meta charset="UTF-8">
+    <meta name='viewport' content='width=device-width, initial-scale=1'>
+    <meta name='description' content='hulet.org'>
+    <!-- Using minified versions for performance -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/2.6.14/vue.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        /* Basic reset and fullscreen styles */
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+            overflow: hidden; /* Prevent scrollbars */
+            background-color: #111;
+        }
 
-    #app {
-        height: 100%;
-        width: 100%;
-        display: flex; /* Use flexbox to manage layout */
-        flex-direction: column; /* Stack children vertically */
-    }
+        #app {
+            height: 100%;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
 
-    #stage {
-        position: relative;
-        flex-grow: 1; /* Allow stage to take up available space */
-        width: 100%;
-    }
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+        }
 
-    #canvas-container {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        z-index: 1;
-    }
-
-    #canvas {
-        display: block; /* Remove extra space below canvas */
-        width: 100%;
-        height: 100%;
-    }
-
-</style>
-
-<div id='app'>
-    <div id="stage">
-        <div id="canvas-container">
-            <canvas id='canvas' v-on:touchmove='touchMove' v-on:mousemove='mouseMove' v-on:mousedown='mouseDown'></canvas>
-        </div>
+    </style>
+</head>
+<body>
+    <div id='app'>
+        <canvas id='canvas'
+            v-on:touchmove='touchMove'
+            v-on:mousemove='mouseMove'
+            v-on:mousedown='mouseDown'>
+        </canvas>
     </div>
-</div>
 
-<script type="x-shader/x-fragment" id="fs">
-uniform vec2 size, mouse, range;
-uniform float mouseRange, shadow, d;
-uniform int maxItr;
-uniform vec4 c[5];
+    <script type="x-shader/x-fragment" id="fs">
+    // Fragment Shader for rendering the Julia set
+    uniform vec2 size, range, center; // Removed 'mouse' as it's no longer needed here
+    uniform vec2 c_julia; // The constant 'c' for the Julia set calculation
+    uniform float mouseRange, shadow, d;
+    uniform int maxItr;
+    uniform vec4 c[5];
 
-float julia(vec2 z, vec2 c) {
-    vec2 nz;
-    int i;
-    float x_tmp;
-    for(int itr=0;itr<1024;itr++){
-        i = itr;
-        if(dot(z, z) >= 65536. || itr >= maxItr) break;
+    // Calculates the escape time for a point in the complex plane
+    float julia(vec2 z, vec2 c_param) {
+        int i;
+        for(int itr=0; itr<2048; itr++){ // Increased max iterations for detail
+            i = itr;
+            if(dot(z, z) >= 65536. || itr >= maxItr) break;
 
-        x_tmp = z.x*z.x - z.y*z.y + c.x;
-        z.y = 2.*z.x*z.y + c.y;
-        z.x = x_tmp;
+            // z = z^2 + c
+            float x_tmp = z.x*z.x - z.y*z.y + c_param.x;
+            z.y = 2.*z.x*z.y + c_param.y;
+            z.x = x_tmp;
+        }
+
+        // Smooth coloring algorithm
+        float nu = 0.0;
+        if(i < maxItr){
+            float log_zn = log(dot(z, z)) * 0.5;
+            nu = log(log_zn / log(2.0))/log(2.0);
+        }
+
+        return (float(i+1)-nu)/float(maxItr);
     }
 
-    float nu = 0.0;
-    if(i < maxItr){
-        float log_zn = log(dot(z, z)) * 0.5;
-        nu = log(log_zn / log(2.0))/log(2.0);
+    // Smoothstep function for color interpolation
+    float smoothf(float x) {
+        return smoothstep(0., 1., x);
     }
 
-    return (float(i+1)-nu)/float(maxItr);
-}
-
-float smooth(float x) {
-    return smoothstep(0., 1., x);
-}
-
-vec4 color(float x) {
-    if(x < c[1].a){
-        return mix(c[0], c[1], smooth((x-c[0].a)/(c[1].a-c[0].a)));
-    }else if(x < c[2].a){
-        return mix(c[1], c[2], smooth((x-c[1].a)/(c[2].a-c[1].a)));
-    }else if(x < c[3].a){
-        return mix(c[2], c[3], smooth((x-c[2].a)/(c[3].a-c[2].a)));
-    }else if(x < c[4].a){
-        return mix(c[3], c[4], smooth((x-c[3].a)/(c[4].a-c[3].a)));
-    }else{
-        return mix(c[4], c[0], smooth((x-c[4].a)/(1.0-c[4].a)));
+    // Maps a value to a color using the defined color palette
+    vec4 color(float x) {
+        if(x < c[1].a){
+            return mix(c[0], c[1], smoothf((x-c[0].a)/(c[1].a-c[0].a)));
+        }else if(x < c[2].a){
+            return mix(c[1], c[2], smoothf((x-c[1].a)/(c[2].a-c[1].a)));
+        }else if(x < c[3].a){
+            return mix(c[2], c[3], smoothf((x-c[2].a)/(c[3].a-c[2].a)));
+        }else if(x < c[4].a){
+            return mix(c[3], c[4], smoothf((x-c[3].a)/(c[4].a-c[3].a)));
+        }else{
+            return mix(c[4], c[0], smoothf((x-c[4].a)/(1.0-c[4].a)));
+        }
     }
-}
 
-vec4 pattern(float f) {
-    f = pow(f, shadow);
-    // return color(mod(f, 1.0/d)*d);
-    return color(mod(f, 1./d)*d);
-}
+    // Applies shadow and tiling to the color
+    vec4 pattern(float f) {
+        f = pow(f, shadow);
+        return color(mod(f, 1./d)*d);
+    }
 
-void main() {
-    float r = size.x*range.y > range.x*size.y ? range.y/size.y : range.x/size.x;
-    vec2 z = (gl_FragCoord.xy - 0.5*size)*r;
-    vec2 c = (mouse - 0.5*size)*r*mouseRange;
+    void main() {
+        // Determine the correct aspect ratio for the view
+        float r = size.x*range.y > range.x*size.y ? range.y/size.y : range.x/size.x;
+        
+        // Map the fragment coordinate to the complex plane, including the center offset for panning
+        vec2 z = center + (gl_FragCoord.xy - 0.5*size)*r;
+        
+        // The 'c' parameter is now passed in directly via the c_julia uniform.
+        // It does NOT change when zooming.
 
-    // antialiasing
-    float dl = r * 0.5; 
-    vec4 col = vec4(0.);
-    col += pattern(julia(z+vec2(dl*0., dl*0.), c));
-    col += pattern(julia(z+vec2(dl*0., dl*1.), c));
-    col += pattern(julia(z+vec2(dl*1., dl*0.), c));
-    col += pattern(julia(z+vec2(dl*1., dl*1.), c));
-    col *= 0.25;
+        // Simple anti-aliasing by sampling neighbors
+        float dl = r * 0.5; 
+        vec4 col = vec4(0.);
+        col += pattern(julia(z+vec2(dl*0., dl*0.), c_julia));
+        col += pattern(julia(z+vec2(dl*0., dl*1.), c_julia));
+        col += pattern(julia(z+vec2(dl*1., dl*0.), c_julia));
+        col += pattern(julia(z+vec2(dl*1., dl*1.), c_julia));
+        col *= 0.25;
 
-    // output
-    gl_FragColor = col;
-}
-</script>
+        gl_FragColor = col;
+    }
+    </script>
 
-<script>
-
-    var app = new Vue({
-        el: "#app",
-        data: {
-            canvas: null,
-            renderer: null,
-            scene: null,
-            camera: null,
-            mouse: true,
-            uniforms: {
-                range: { type: 'v2', value: new THREE.Vector2(3.5, 2.5) },
-                size: { type: 'v2', value: new THREE.Vector2(0., 0.) },
-                mouse: { type: 'v2', value: new THREE.Vector2(0., 0.) },
-                maxItr: { type: 'int', value: 128 },
-                mouseRange: { type: 'float', value: 0.7 },
-                shadow: { type: 'float', value: 1.0 },
-                d: { type: 'float', value: 5.0 },
-                c: {
-                    type: 'v4v', value: [
-                        new THREE.Vector4(0. / 255., 7. / 255., 30. / 255., 0.0),
-                        new THREE.Vector4(32. / 255., 107. / 255., 203. / 255., 0.16),
-                        new THREE.Vector4(237. / 255., 255. / 255., 255. / 255., 0.42),
-                        new THREE.Vector4(255. / 255., 140. / 255., 0. / 255., 0.6425),
-                        new THREE.Vector4(0. / 255., 2. / 255., 0. / 255., 0.8575),
-                    ]
+    <script>
+        var app = new Vue({
+            el: "#app",
+            data: {
+                canvas: null,
+                renderer: null,
+                scene: null,
+                camera: null,
+                mouse: true, // Controls if the Julia set updates with mouse movement
+                originalRange: new THREE.Vector2(3.5, 2.5), // Store the initial view range
+                uniforms: {
+                    range: { type: 'v2', value: new THREE.Vector2(3.5, 2.5) },
+                    center: { type: 'v2', value: new THREE.Vector2(0., 0.) }, // For panning
+                    c_julia: { type: 'v2', value: new THREE.Vector2(-0.4, 0.6) }, // The Julia constant
+                    size: { type: 'v2', value: new THREE.Vector2(0., 0.) },
+                    maxItr: { type: 'int', value: 128 },
+                    mouseRange: { type: 'float', value: 0.7 },
+                    shadow: { type: 'float', value: 1.0 },
+                    d: { type: 'float', value: 5.0 },
+                    c: {
+                        type: 'v4v', value: [
+                            new THREE.Vector4(0. / 255., 7. / 255., 30. / 255., 0.0),
+                            new THREE.Vector4(32. / 255., 107. / 255., 203. / 255., 0.16),
+                            new THREE.Vector4(237. / 255., 255. / 255., 255. / 255., 0.42),
+                            new THREE.Vector4(255. / 255., 140. / 255., 0. / 255., 0.6425),
+                            new THREE.Vector4(0. / 255., 2. / 255., 0. / 255., 0.8575),
+                        ]
+                    },
                 },
             },
-            color: [
-                { rgb: "#00071e", a: 0. },
-                { rgb: "#206bcb", a: 0.16 },
-                { rgb: "#edffff", a: 0.42 },
-                { rgb: "#ff8c00", a: 0.6425 },
-                { rgb: "#000200", a: 0.8575 },
-            ],
-        },
-        watch: {
-            uniforms: {
-                handler: function () {
-                    window.requestAnimationFrame(this.draw);
+            watch: {
+                // Watch for changes in uniforms and trigger a redraw
+                uniforms: {
+                    handler: function () {
+                        window.requestAnimationFrame(this.draw);
+                    },
+                    deep: true,
                 },
-                deep: true,
             },
-            color: {
-                handler: function () {
-                    // window.requestAnimationFrame(this.draw);
-                    for (var i = 0; i < 5; i++) {
-                        var r = parseInt("0x" + this.color[i].rgb.substring(1, 3)) / 255.;
-                        var g = parseInt("0x" + this.color[i].rgb.substring(3, 5)) / 255.;
-                        var b = parseInt("0x" + this.color[i].rgb.substring(5, 7)) / 255.;
-                        this.uniforms.c.value[i] = new THREE.Vector4(r, g, b, this.color[i].a);
+            mounted: function () {
+                this.canvas = document.getElementById('canvas');
+
+                // Initialize Three.js renderer, scene, and camera
+                this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true });
+                this.scene = new THREE.Scene();
+                this.camera = new THREE.OrthographicCamera(-0.5, 0.5, 0.5, -0.5, -1, 1);
+                this.scene.add(this.camera);
+
+                // Create a shader material with our fragment shader and uniforms
+                var screenShaderMaterial = new THREE.ShaderMaterial({
+                    fragmentShader: document.getElementById('fs').textContent,
+                    uniforms: this.uniforms,
+                });
+
+                // Create a plane that fills the screen to apply the shader to
+                var plane = new THREE.PlaneGeometry(1.0, 1.0);
+                var mesh = new THREE.Mesh(plane, screenShaderMaterial);
+                this.scene.add(mesh);
+
+                // Add event listeners
+                window.addEventListener('resize', this.resize);
+                this.canvas.addEventListener('wheel', this.mouseWheel); // Listener for zoom
+
+                // Initial setup
+                this.resize();
+                this.draw();
+            },
+            methods: {
+                draw: function () {
+                    if(this.renderer) {
+                        this.renderer.render(this.scene, this.camera);
                     }
-                    window.requestAnimationFrame(this.draw);
                 },
-                deep: true,
+                // Toggles whether the image is "frozen" or follows the mouse
+                mouseDown: function () {
+                    this.mouse = !this.mouse;
+                    // If we are un-freezing the view, reset zoom and pan to original state
+                    if (this.mouse) {
+                        this.uniforms.range.value.copy(this.originalRange);
+                        this.uniforms.center.value.set(0, 0);
+                    }
+                },
+                // Handles zooming with the mouse wheel, centered on the cursor
+                mouseWheel: function(event) {
+                    // Only allow zooming when the image is frozen (mouse movement is off)
+                    if (this.mouse) {
+                        return;
+                    }
+                    event.preventDefault();
+
+                    const zoomFactor = 1.1;
+                    const size = this.uniforms.size.value;
+                    const range_before = this.uniforms.range.value;
+                    const center_before = this.uniforms.center.value;
+
+                    // Mouse position in WebGL coordinates (Y-up from bottom-left)
+                    const mousePx = new THREE.Vector2(event.offsetX, this.canvas.height - event.offsetY);
+
+                    // Calculate scaling factor 'r' before zoom (must match shader logic)
+                    const r_before = size.x * range_before.y > range_before.x * size.y ? range_before.y / size.y : range_before.x / size.x;
+                    
+                    // Vector from screen center to mouse in pixels
+                    const vec_from_center_px = new THREE.Vector2().subVectors(mousePx, new THREE.Vector2(size.x * 0.5, size.y * 0.5));
+
+                    // The point in the complex plane that is under the mouse cursor
+                    const mouse_complex_before = new THREE.Vector2().copy(center_before).add(vec_from_center_px.clone().multiplyScalar(r_before));
+                    
+                    // Determine zoom direction and calculate new range
+                    let new_range = new THREE.Vector2().copy(range_before);
+                    if (event.deltaY < 0) { // Zoom in
+                        new_range.divideScalar(zoomFactor);
+                    } else { // Zoom out
+                        new_range.multiplyScalar(zoomFactor);
+                    }
+
+                    // Clamp the zoom-out to the original size
+                    new_range.x = Math.min(this.originalRange.x, new_range.x);
+                    new_range.y = Math.min(this.originalRange.y, new_range.y);
+
+                    // Calculate new scaling factor 'r' after zoom
+                    const r_after = size.x * new_range.y > new_range.x * size.y ? new_range.y / size.y : new_range.x / size.x;
+                    
+                    // Calculate the new center point to keep the point under the mouse fixed
+                    const new_center = new THREE.Vector2().copy(mouse_complex_before).sub(vec_from_center_px.clone().multiplyScalar(r_after));
+                    
+                    // Update uniforms, which will trigger a redraw via the watcher
+                    this.uniforms.range.value.copy(new_range);
+                    this.uniforms.center.value.copy(new_center);
+                },
+                // Updates the 'c_julia' parameter based on mouse position when in live mode
+                mouseMove: function (event) {
+                    if (this.mouse) {
+                        const r = this.uniforms.size.value.x * this.uniforms.range.value.y > this.uniforms.range.value.x * this.uniforms.size.value.y ? this.uniforms.range.value.y / this.uniforms.size.value.y : this.uniforms.range.value.x / this.uniforms.size.value.x;
+                        const mousePx = new THREE.Vector2(event.offsetX, this.canvas.height - event.offsetY);
+                        const centerPx = new THREE.Vector2(this.uniforms.size.value.x * 0.5, this.uniforms.size.value.y * 0.5);
+                        const c_val = new THREE.Vector2().subVectors(mousePx, centerPx).multiplyScalar(r * this.uniforms.mouseRange.value);
+                        this.uniforms.c_julia.value.copy(c_val);
+                    }
+                },
+                // Updates the 'c_julia' parameter based on touch position when in live mode
+                touchMove: function (event) {
+                    if (this.mouse) {
+                        const r = this.uniforms.size.value.x * this.uniforms.range.value.y > this.uniforms.range.value.x * this.uniforms.size.value.y ? this.uniforms.range.value.y / this.uniforms.size.value.y : this.uniforms.range.value.x / this.uniforms.size.value.x;
+                        const touchPx = new THREE.Vector2(event.targetTouches[0].clientX, this.canvas.height - event.targetTouches[0].clientY);
+                        const centerPx = new THREE.Vector2(this.uniforms.size.value.x * 0.5, this.uniforms.size.value.y * 0.5);
+                        const c_val = new THREE.Vector2().subVectors(touchPx, centerPx).multiplyScalar(r * this.uniforms.mouseRange.value);
+                        this.uniforms.c_julia.value.copy(c_val);
+                    }
+                },
+                // Handles window resizing
+                resize: function () {
+                    const w = window.innerWidth;
+                    const h = window.innerHeight;
+
+                    // Update renderer and canvas size
+                    this.renderer.setSize(w, h);
+                    
+                    // Update shader uniform for size
+                    this.uniforms.size.value.x = w;
+                    this.uniforms.size.value.y = h;
+                    
+                    // Redraw the scene
+                    this.draw();
+                },
             },
-        },
-        mounted: function () {
-            this.canvas = document.getElementById('canvas');
-            var w = this.canvas.getBoundingClientRect().width;
-            // var w = canvas.innerWidth;
-            var h = w * 0.5;
-            this.canvas.width = w;
-            this.canvas.height = h;
+        });
+    </script>
+</body>
+</html>
 
-            // prepare webgl with Three.js
-            this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas });
-            this.scene = new THREE.Scene();
-            this.camera = new THREE.OrthographicCamera(-0.5, 0.5, 0.5, -0.5, -1, 1);
-            this.camera.position.z = 1;
-            this.scene.add(this.camera)
-
-            // uniforms for shader
-            this.uniforms.size.value = new THREE.Vector2(w, h);
-            this.uniforms.mouse.value = new THREE.Vector2(w * 0.5, h * 0.5);
-
-            // prepare shaders
-            var screenShaderMaterial = new THREE.ShaderMaterial({
-                fragmentShader: document.getElementById('fs').textContent,
-                uniforms: this.uniforms,
-            });
-
-            // set plane
-            var plane = new THREE.PlaneGeometry(1.0, 1.0);
-            var mesh = new THREE.Mesh(plane, screenShaderMaterial);
-            this.scene.add(mesh);
-
-            // add resize handler
-            window.addEventListener('resize', this.resize)
-            window.addEventListener('fullscreenchange', this.resize)
-
-            this.draw();
-            this.resize();
-        },
-        methods: {
-            draw: function () {
-                this.renderer.render(this.scene, this.camera);
-            },
-            mouseMove: function (event) {
-                if (this.mouse) {
-                    this.uniforms.mouse.value.x = event.offsetX;
-                    this.uniforms.mouse.value.y = event.offsetY;
-                }
-            },
-            touchMove: function () {
-                this.uniforms.mouse.value.x = event.targetTouches[0].clientX;
-                this.uniforms.mouse.value.y = event.targetTouches[0].clientY;
-            },
-            mouseDown: function () {
-                this.mouse = !this.mouse;
-            },
-            resize: function () {
-                var w = window.innerWidth;
-                var h = window.innerHeight;
-                this.uniforms.size.value.x = w;
-                this.uniforms.size.value.y = h;
-                this.canvas.width = w;
-                this.canvas.height = h;
-                this.canvas.style.width = w;
-                this.canvas.style.height = h;
-
-                this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas });
-
-                window.requestAnimationFrame(this.draw);
-            },
-            save: function () {
-                this.renderer.render(this.scene, this.camera);
-                var screenshot = this.renderer.domElement.toDataURL();
-                var link = document.createElement("a");
-                link.href = screenshot;
-                link.download = 'out.png';
-                link.click();
-                delete link;
-            },
-        },
-    });
-</script>
