@@ -24,6 +24,7 @@
         }
 
         #app {
+            position: relative;
             height: 100%;
             width: 100%;
             display: flex;
@@ -38,11 +39,32 @@
             cursor: pointer;
         }
 
+        .hint {
+            position: absolute;
+            bottom: 12%;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255, 255, 255, 0.6);
+            font-family: sans-serif;
+            font-size: 14px;
+            letter-spacing: 0.02em;
+            opacity: 0;
+            transition: opacity 800ms ease;
+            pointer-events: none;
+            user-select: none;
+            z-index: 2;
+        }
+
+        .hint.show {
+            opacity: 1;
+        }
+
     </style>
 </head>
 <body>
     <div id='app'>
         <canvas id='canvas'></canvas>
+        <div id="hint" class="hint">move · click · scroll · press ? for info</div>
     </div>
 
     <script type="x-shader/x-fragment" id="fs">
@@ -158,6 +180,29 @@
             },
         };
 
+        const HINT_DURATION_MS = 4000;
+        const HINT_FADE_MS = 800;
+        let hintEl = null;
+        let hintCount = 0;
+        let hintVisible = false;
+        let hintHideTimer = null;
+        let hintFadeTimer = null;
+
+        function showHint() {
+            if (hintCount >= 2 || hintVisible) return;
+            hintCount++;
+            hintVisible = true;
+            hintEl.classList.add('show');
+            clearTimeout(hintHideTimer);
+            clearTimeout(hintFadeTimer);
+            hintHideTimer = setTimeout(() => {
+                hintEl.classList.remove('show');
+                hintFadeTimer = setTimeout(() => {
+                    hintVisible = false;
+                }, HINT_FADE_MS);
+            }, HINT_DURATION_MS);
+        }
+
         function scaleR(size, range) {
             return size.x * range.y > range.x * size.y
                 ? range.y / size.y
@@ -225,6 +270,7 @@
         }
 
         function onMouseMove(event) {
+            showHint();
             if (!state.mouse) return;
             const size = state.uniforms.size.value;
             const range = state.uniforms.range.value;
@@ -266,6 +312,7 @@
 
         function init() {
             state.canvas = document.getElementById('canvas');
+            hintEl = document.getElementById('hint');
             state.renderer = new THREE.WebGLRenderer({ canvas: state.canvas, antialias: true });
             state.scene = new THREE.Scene();
             state.camera = new THREE.OrthographicCamera(-0.5, 0.5, 0.5, -0.5, -1, 1);
@@ -287,6 +334,7 @@
 
             onResize();
             requestAnimationFrame(frameLoop);
+            showHint();
         }
 
         if (document.readyState === 'loading') {
