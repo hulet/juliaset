@@ -59,12 +59,71 @@
             opacity: 1;
         }
 
+        .overlay {
+            position: absolute;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 3;
+        }
+
+        .overlay.show {
+            display: flex;
+        }
+
+        .overlay-panel {
+            background: rgba(17, 17, 17, 0.95);
+            border: 1px solid #ff8c00;
+            padding: 24px 32px;
+            max-width: 480px;
+            color: #eee;
+            font-family: sans-serif;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .overlay-panel h2 {
+            margin: 0 0 12px;
+            font-weight: normal;
+            color: #ff8c00;
+        }
+
+        .overlay-panel h3 {
+            margin: 16px 0 8px;
+            font-weight: normal;
+            font-size: 12px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .overlay-panel pre {
+            margin: 0;
+            font-family: 'SF Mono', Menlo, monospace;
+            font-size: 13px;
+            color: #ccc;
+            line-height: 1.6;
+        }
+
     </style>
 </head>
 <body>
     <div id='app'>
         <canvas id='canvas'></canvas>
         <div id="hint" class="hint">move · click · scroll · press ? for info</div>
+        <div id="overlay" class="overlay">
+            <div class="overlay-panel">
+                <h2>Julia set</h2>
+                <p>A fractal defined by z &rarr; z&sup2; + c. Each pixel is colored by how many iterations of that formula it takes to escape.</p>
+                <h3>Controls</h3>
+<pre>  move     change c (the constant)
+  click    freeze / unfreeze
+  scroll   zoom in / out (while frozen)
+  ?        this overlay</pre>
+            </div>
+        </div>
     </div>
 
     <script type="x-shader/x-fragment" id="fs">
@@ -188,6 +247,27 @@
         let hintHideTimer = null;
         let hintFadeTimer = null;
 
+        let overlayEl = null;
+        let overlayOpen = false;
+
+        function toggleOverlay() {
+            overlayOpen = !overlayOpen;
+            overlayEl.classList.toggle('show', overlayOpen);
+        }
+
+        function onKeyDown(event) {
+            if (event.key === '?') {
+                event.preventDefault();
+                toggleOverlay();
+            } else if (event.key === 'Escape' && overlayOpen) {
+                toggleOverlay();
+            }
+        }
+
+        function onOverlayClick(event) {
+            if (event.target === overlayEl) toggleOverlay();
+        }
+
         function showHint() {
             if (hintCount >= 2 || hintVisible) return;
             hintCount++;
@@ -222,6 +302,7 @@
         }
 
         function onMouseDown() {
+            if (overlayOpen) return;
             state.mouse = !state.mouse;
             if (state.mouse) {
                 state.uniforms.range.value.copy(state.originalRange);
@@ -231,6 +312,7 @@
         }
 
         function onMouseWheel(event) {
+            if (overlayOpen) return;
             if (state.mouse) return;
             event.preventDefault();
 
@@ -270,6 +352,7 @@
         }
 
         function onMouseMove(event) {
+            if (overlayOpen) return;
             showHint();
             if (!state.mouse) return;
             const size = state.uniforms.size.value;
@@ -285,6 +368,7 @@
         }
 
         function onTouchMove(event) {
+            if (overlayOpen) return;
             if (!state.mouse) return;
             const size = state.uniforms.size.value;
             const range = state.uniforms.range.value;
@@ -313,6 +397,7 @@
         function init() {
             state.canvas = document.getElementById('canvas');
             hintEl = document.getElementById('hint');
+            overlayEl = document.getElementById('overlay');
             state.renderer = new THREE.WebGLRenderer({ canvas: state.canvas, antialias: true });
             state.scene = new THREE.Scene();
             state.camera = new THREE.OrthographicCamera(-0.5, 0.5, 0.5, -0.5, -1, 1);
@@ -331,6 +416,8 @@
             state.canvas.addEventListener('mousedown', onMouseDown);
             state.canvas.addEventListener('mousemove', onMouseMove);
             state.canvas.addEventListener('touchmove', onTouchMove);
+            document.addEventListener('keydown', onKeyDown);
+            overlayEl.addEventListener('click', onOverlayClick);
 
             onResize();
             requestAnimationFrame(frameLoop);
