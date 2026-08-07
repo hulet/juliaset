@@ -242,10 +242,8 @@
         const HINT_DURATION_MS = 4000;
         const HINT_FADE_MS = 800;
         let hintEl = null;
-        let hintCount = 0;
-        let hintVisible = false;
-        let hintHideTimer = null;
-        let hintFadeTimer = null;
+        let firstHintFaded = false;
+        let firstMoveSeen = false;
 
         let overlayEl = null;
         let overlayOpen = false;
@@ -269,18 +267,23 @@
         }
 
         function showHint() {
-            if (hintCount >= 2 || hintVisible) return;
-            hintCount++;
-            hintVisible = true;
             hintEl.classList.add('show');
-            clearTimeout(hintHideTimer);
-            clearTimeout(hintFadeTimer);
-            hintHideTimer = setTimeout(() => {
+            setTimeout(() => {
                 hintEl.classList.remove('show');
-                hintFadeTimer = setTimeout(() => {
-                    hintVisible = false;
-                }, HINT_FADE_MS);
             }, HINT_DURATION_MS);
+        }
+
+        function showLoadHint() {
+            showHint();
+            setTimeout(() => {
+                firstHintFaded = true;
+            }, HINT_DURATION_MS + HINT_FADE_MS);
+        }
+
+        function maybeShowMoveHint() {
+            if (firstMoveSeen) return;
+            firstMoveSeen = true;
+            if (firstHintFaded) showHint();
         }
 
         function scaleR(size, range) {
@@ -353,7 +356,7 @@
 
         function onMouseMove(event) {
             if (overlayOpen) return;
-            showHint();
+            maybeShowMoveHint();
             if (!state.mouse) return;
             const size = state.uniforms.size.value;
             const range = state.uniforms.range.value;
@@ -421,7 +424,7 @@
 
             onResize();
             requestAnimationFrame(frameLoop);
-            showHint();
+            showLoadHint();
         }
 
         if (document.readyState === 'loading') {
