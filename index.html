@@ -239,6 +239,16 @@
             },
         };
 
+        const MAX_ITR_BASE = 128;
+        const MAX_ITR_K = 64;
+        const MAX_ITR_CAP = 4096;
+
+        function computeMaxItr() {
+            const zoom = state.originalRange.x / state.uniforms.range.value.x;
+            const itr = MAX_ITR_BASE + MAX_ITR_K * Math.log2(zoom);
+            return Math.min(MAX_ITR_CAP, Math.round(itr));
+        }
+
         const HINT_DURATION_MS = 4000;
         const HINT_FADE_MS = 800;
         let hintEl = null;
@@ -310,6 +320,7 @@
             if (state.mouse) {
                 state.uniforms.range.value.copy(state.originalRange);
                 state.uniforms.center.value.set(0, 0);
+                state.uniforms.maxItr.value = computeMaxItr();
             }
             state.dirty = true;
         }
@@ -351,6 +362,7 @@
 
             state.uniforms.range.value.copy(new_range);
             state.uniforms.center.value.copy(new_center);
+            state.uniforms.maxItr.value = computeMaxItr();
             state.dirty = true;
         }
 
