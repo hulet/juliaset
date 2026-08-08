@@ -134,6 +134,10 @@
     uniform int maxItr;
     uniform vec4 c[5];
 
+    // Fixed reference for color normalization, decoupled from maxItr so the
+    // palette stays stable across zoom levels.
+    const float MAX_ITR_REF = 128.0;
+
     // Calculates the escape time for a point in the complex plane
     float julia(vec2 z, vec2 c_param) {
         int i;
@@ -147,14 +151,14 @@
             z.x = x_tmp;
         }
 
-        // Smooth coloring algorithm
-        float nu = 0.0;
-        if(i < maxItr){
-            float log_zn = log(dot(z, z)) * 0.5;
-            nu = log(log_zn / log(2.0))/log(2.0);
-        }
+        // Interior (didn't escape): return a fixed sentinel so its color is
+        // stable across zoom levels regardless of maxItr.
+        if(i >= maxItr) return 1.0;
 
-        return (float(i+1)-nu)/float(maxItr);
+        // Smooth coloring for escapees
+        float log_zn = log(dot(z, z)) * 0.5;
+        float nu = log(log_zn / log(2.0))/log(2.0);
+        return (float(i+1)-nu)/MAX_ITR_REF;
     }
 
     // Smoothstep function for color interpolation
@@ -240,7 +244,7 @@
         };
 
         const MAX_ITR_BASE = 128;
-        const MAX_ITR_K = 64;
+        const MAX_ITR_K = 256;
         const MAX_ITR_CAP = 4096;
 
         function computeMaxItr() {
