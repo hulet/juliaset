@@ -39,6 +39,14 @@
             cursor: pointer;
         }
 
+        #canvas.frozen {
+            cursor: grab;
+        }
+
+        #canvas.dragging {
+            cursor: grabbing;
+        }
+
         .hint {
             position: absolute;
             bottom: 12%;
@@ -112,7 +120,7 @@
 <body>
     <div id='app'>
         <canvas id='canvas'></canvas>
-        <div id="hint" class="hint">move · click · scroll · press ? for info</div>
+        <div id="hint" class="hint">move · click · scroll · drag · press ? for info</div>
         <div id="overlay" class="overlay">
             <div class="overlay-panel">
                 <h2>Julia set</h2>
@@ -121,6 +129,7 @@
 <pre>  move     change c (the constant)
   click    freeze / unfreeze
   scroll   zoom in / out (while frozen)
+  drag     pan (while frozen)
   ?        this overlay</pre>
             </div>
         </div>
@@ -247,6 +256,14 @@
         const MAX_ITR_K = 256;
         const MAX_ITR_CAP = 4096;
 
+        const DRAG_THRESHOLD_PX = 5;
+        let mouseDownActive = false;
+        let isDragging = false;
+        let dragStartX = 0;
+        let dragStartY = 0;
+        let lastMouseX = 0;
+        let lastMouseY = 0;
+
         function computeMaxItr() {
             const zoom = state.originalRange.x / state.uniforms.range.value.x;
             const itr = MAX_ITR_BASE + MAX_ITR_K * Math.log2(zoom);
@@ -318,13 +335,35 @@
             requestAnimationFrame(frameLoop);
         }
 
-        function onMouseDown() {
+        function onMouseDown(event) {
+            if (overlayOpen) return;
+            mouseDownActive = true;
+            isDragging = false;
+            dragStartX = event.clientX;
+            dragStartY = event.clientY;
+            lastMouseX = event.clientX;
+            lastMouseY = event.clientY;
+        }
+
+        function onMouseUp() {
+            if (!mouseDownActive) return;
+            mouseDownActive = false;
+
+            if (isDragging) {
+                isDragging = false;
+                state.canvas.classList.remove('dragging');
+                return;
+            }
+
             if (overlayOpen) return;
             state.mouse = !state.mouse;
             if (state.mouse) {
                 state.uniforms.range.value.copy(state.originalRange);
                 state.uniforms.center.value.set(0, 0);
                 state.uniforms.maxItr.value = computeMaxItr();
+                state.canvas.classList.remove('frozen');
+            } else {
+                state.canvas.classList.add('frozen');
             }
             state.dirty = true;
         }
@@ -373,6 +412,31 @@
         function onMouseMove(event) {
             if (overlayOpen) return;
             maybeShowMoveHint();
+
+            if (mouseDownActive) {
+                if (!isDragging) {
+                    const distX = event.clientX - dragStartX;
+                    const distY = event.clientY - dragStartY;
+                    if (Math.hypot(distX, distY) >= DRAG_THRESHOLD_PX) {
+                        isDragging = true;
+                        if (!state.mouse) {
+                            state.canvas.classList.add('dragging');
+                        }
+                    }
+                }
+                if (isDragging && !state.mouse) {
+                    const dx = event.clientX - lastMouseX;
+                    const dy = event.clientY - lastMouseY;
+                    const r = scaleR(state.uniforms.size.value, state.uniforms.range.value);
+                    state.uniforms.center.value.x -= dx * r;
+                    state.uniforms.center.value.y += dy * r;
+                    lastMouseX = event.clientX;
+                    lastMouseY = event.clientY;
+                    state.dirty = true;
+                    return;
+                }
+            }
+
             if (!state.mouse) return;
             const size = state.uniforms.size.value;
             const range = state.uniforms.range.value;
@@ -435,6 +499,7 @@
             state.canvas.addEventListener('mousedown', onMouseDown);
             state.canvas.addEventListener('mousemove', onMouseMove);
             state.canvas.addEventListener('touchmove', onTouchMove);
+            window.addEventListener('mouseup', onMouseUp);
             document.addEventListener('keydown', onKeyDown);
             overlayEl.addEventListener('click', onOverlayClick);
 
