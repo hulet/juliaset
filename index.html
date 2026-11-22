@@ -271,11 +271,13 @@
             return Math.min(MAX_ITR_CAP, Math.round(itr));
         }
 
-        const HINT_DURATION_MS = 4000;
-        const HINT_FADE_MS = 800;
+        // The hint stays up until the visitor does anything, then fades away --
+        // but never before it has been readable for HINT_MIN_MS.
+        const HINT_DISMISS_EVENTS = ['mousedown', 'mousemove', 'wheel', 'touchstart', 'keydown'];
+        const HINT_MIN_MS = 4000;
         let hintEl = null;
-        let firstHintFaded = false;
-        let firstMoveSeen = false;
+        let hintShownAt = 0;
+        let hintDismissed = false;
 
         let overlayEl = null;
         let overlayOpen = false;
@@ -300,22 +302,18 @@
 
         function showHint() {
             hintEl.classList.add('show');
-            setTimeout(() => {
+            hintShownAt = performance.now();
+        }
+
+        function dismissHint() {
+            if (hintDismissed) return;
+            hintDismissed = true;
+            const remaining = HINT_MIN_MS - (performance.now() - hintShownAt);
+            if (remaining > 0) {
+                setTimeout(() => hintEl.classList.remove('show'), remaining);
+            } else {
                 hintEl.classList.remove('show');
-            }, HINT_DURATION_MS);
-        }
-
-        function showLoadHint() {
-            showHint();
-            setTimeout(() => {
-                firstHintFaded = true;
-            }, HINT_DURATION_MS + HINT_FADE_MS);
-        }
-
-        function maybeShowMoveHint() {
-            if (firstMoveSeen) return;
-            firstMoveSeen = true;
-            if (firstHintFaded) showHint();
+            }
         }
 
         function scaleR(size, range) {
@@ -412,7 +410,6 @@
 
         function onMouseMove(event) {
             if (overlayOpen) return;
-            maybeShowMoveHint();
 
             if (mouseDownActive) {
                 if (!isDragging) {
@@ -504,9 +501,13 @@
             document.addEventListener('keydown', onKeyDown);
             overlayEl.addEventListener('click', onOverlayClick);
 
+            HINT_DISMISS_EVENTS.forEach((type) => {
+                window.addEventListener(type, dismissHint, { passive: true, once: true });
+            });
+
             onResize();
             requestAnimationFrame(frameLoop);
-            showLoadHint();
+            showHint();
         }
 
         if (document.readyState === 'loading') {
